@@ -4,8 +4,7 @@ A proof of concept for SPQR metadata migrations through the **coordinator
 Console** using the PostgreSQL protocol. History is stored in SPQR's own QDB
 through the commands introduced by [PR #3065](https://github.com/pg-sharding/spqr/pull/3065).
 No separate PostgreSQL database is needed for history. File naming and CLI
-behavior follow pgmigrate 1.0.13; [compatibility and differences](research/pgmigrate-compatibility.md)
-are documented explicitly.
+behavior follow pgmigrate 1.0.13, with PoC differences described below.
 
 ## Installation and usage
 
@@ -126,7 +125,5 @@ PGMIGRATE_REFERENCE=/tmp/pgmigrate-reference.py \
   .venv/bin/python -m pytest -q tests/test_reference.py
 ```
 
-The tests verify the source's SHA-256 against the
-[pinned reference](research/pgmigrate-reference.json). SPQR verification results
-and the limits of the tested environment are recorded in
-[research](research/spqr-readiness-2026-10-09.md).
+The tests verify the source's SHA-256 against the pinned value in
+[tests/test_reference.py](tests/test_reference.py).

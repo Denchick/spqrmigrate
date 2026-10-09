@@ -1,4 +1,3 @@
 include README.md
 recursive-include examples *.sql *.yml
-recursive-include research *.md *.json *.go
 recursive-include tests *.py

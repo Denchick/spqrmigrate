@@ -1,7 +1,6 @@
 """Optional differential checks using the pinned upstream source, without a DB."""
 
 import hashlib
-import json
 import os
 from pathlib import Path
 import runpy
@@ -14,13 +13,13 @@ from spqrmigrate.files import callbacks, discover, read_statements
 
 
 SOURCE = os.environ.get("PGMIGRATE_REFERENCE")
+SOURCE_SHA256 = "0fa9f753199cef508141d50bdc93415862711f929c95cfd6f0bcdc9ab9e54f97"
 pytestmark = pytest.mark.skipif(not SOURCE, reason="Set PGMIGRATE_REFERENCE to the pinned pgmigrate.py")
 
 
 @pytest.fixture
 def reference():
-    pin = json.loads((Path(__file__).parent.parent / "research/pgmigrate-reference.json").read_text())
-    assert hashlib.sha256(Path(SOURCE).read_bytes()).hexdigest() == pin["source_sha256"]
+    assert hashlib.sha256(Path(SOURCE).read_bytes()).hexdigest() == SOURCE_SHA256
     return SimpleNamespace(**runpy.run_path(SOURCE, run_name="pgmigrate_reference"))
 
 
