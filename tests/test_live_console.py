@@ -11,6 +11,8 @@ import pytest
 
 from spqrmigrate.backend import Console
 from spqrmigrate.cli import main
+from spqrmigrate.errors import MigrationError
+from spqrmigrate.journal import entry
 
 
 DSN = os.environ.get("SPQRMIGRATE_TEST_DSN")
@@ -18,7 +20,7 @@ pytestmark = pytest.mark.skipif(not DSN, reason="Set SPQRMIGRATE_TEST_DSN for an
 
 
 @pytest.fixture
-def live(tmp_path):
+def live(tmp_path, coordinator_cluster):
     suffix = uuid.uuid4().hex[:12]
     namespace = "poc-'quoted-" + suffix
     distribution = "poc_" + suffix
@@ -76,3 +78,55 @@ def test_real_baseline_clean_namespace_isolation(live):
     finally:
         other.clean()
         other.close()
+
+
+def test_real_journal_replacement_unicode_and_corruption(live):
+    _, _, backend, _ = live
+    first = entry(1, "Attach café 📦", "O'Brien")
+    second = entry(2, "Detach café 📦", "Renée")
+    backend.save([first])
+    assert backend.history() == [first]
+    backend.save([first, second])
+    assert backend.history() == [first, second]
+    backend.execute("ALTER SYSTEM MIGRATION SET %s TO %s", (backend.key, "json-base64-v1:invalid!"))
+    with pytest.raises(MigrationError, match="Invalid spqrmigrate journal encoding"):
+        backend.history()
+    backend.clean()
+    assert backend.history() == []
+
+
+def test_real_history_and_metadata_survive_coordinator_restart(tmp_path, coordinator_cluster):
+    if coordinator_cluster is None:
+        pytest.skip("Set SPQRMIGRATE_TEST_COORDINATOR and SPQRMIGRATE_TEST_ETCD to test restart")
+    suffix = uuid.uuid4().hex[:12]
+    distribution = "restart_" + suffix
+    namespace = "restart-" + suffix
+    migrations = tmp_path / "migrations"
+    migrations.mkdir()
+    migration = migrations / "V1__Persistent.sql"
+    migration.write_text(f"CREATE DISTRIBUTION {distribution} COLUMN TYPES varchar;")
+    args = ["-c", DSN, "-d", str(tmp_path), "-m", namespace, "--disable_schema_check"]
+    try:
+        assert main(["migrate", "-t", "latest", "--nontransactional", *args]) == 0
+        before = Console(DSN, namespace)
+        try:
+            history = before.history()
+            assert [row["version"] for row in history] == [1]
+        finally:
+            before.close()
+        coordinator_cluster.restart()
+        after = Console(DSN, namespace)
+        try:
+            assert after.history() == history
+            assert distribution in [row[0] for row in after.execute("SHOW distributions")]
+        finally:
+            after.close()
+        # Replaying this non-idempotent CREATE would fail if history were lost.
+        assert main(["migrate", "-t", "latest", *args]) == 0
+    finally:
+        cleanup = Console(DSN, namespace)
+        try:
+            cleanup.clean()
+            cleanup.execute(f"DROP DISTRIBUTION IF EXISTS {distribution};")
+        finally:
+            cleanup.close()

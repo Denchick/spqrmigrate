@@ -1,6 +1,7 @@
 # Implementation status and production plan
 
-Status as of 2026-10-09, based on client commit `6bc76be` and SPQR PR #3065 at
+Status as of 2026-10-09, including the CI changes after client commit `c034466`
+and SPQR PR #3065 at
 `1ada44d557ba928df5c3cc6bdc70577361a8bb28`.
 
 The initial client is implemented and works against the coordinator Console.
@@ -34,14 +35,15 @@ compatibility gap must remain documented or explicitly rejected by the CLI.
 | Local coordination | File lock for cooperating processes using the same endpoint on the same machine | spqrmigrate/backend.py, tests/test_console.py |
 | Compatibility baseline | pgmigrate 1.0.13 source pinned by SHA-256; differential checks without PostgreSQL | tests/test_reference.py |
 | Packaging and development | Console entry point, Python module entry point, wheel/sdist, editable install, Makefile, Ruff | pyproject.toml, Makefile, MANIFEST.in |
+| Continuous integration | Lint/build, Python/OS matrix, required reference and durable coordinator suites, fresh wheel smoke test, aggregate check | .github/workflows/ci.yml, tests/conftest.py |
 | Examples and operations | Example migrations, configuration, documented execution and recovery behavior | examples/, README.md |
 
-The current suite has 39 local checks, 26 reference checks, and 2 coordinator
-checks. All 67 passed when both opt-in inputs were provided during the initial
-verification. Default runs skip reference/coordinator checks unless configured.
-The previous network run used MemQDB and a temporary coordinator build with Unix
-socket startup disabled for the local environment. This is useful smoke coverage,
-but not a release test of an unmodified durable cluster.
+The current suite has 39 local checks, 26 reference checks, and 4 coordinator
+checks. All 69 passed locally with the pinned reference, an unmodified coordinator,
+and etcd 3.6.0, including journal replacement/reset, Unicode, corrupt history, and
+coordinator restart persistence. Default runs skip opt-in checks unless configured;
+CI rejects skipped tests in each selected suite. The hosted workflow and its Python/OS
+matrix still need their first GitHub Actions run after pushing these changes.
 
 ## Missing or intentionally unavailable
 
@@ -51,10 +53,10 @@ but not a release test of an unmodified durable cluster.
 | Conditional journal updates | The client replaces the complete namespace history with SET | Native revision-aware update/CAS; reject stale updates |
 | Atomic metadata and history | SQL and history are separate writes | Native SPQR metadata transaction including the journal |
 | Rollback, dryrun, grouped transactions | Explicitly rejected | Integrate transactional Console execution once its guarantees are defined |
-| Crash/failover recovery qualification | Partial SQL and lost journal acknowledgement are covered locally; durable cluster failure scenarios are not automated | Integration tests against coordinator + etcd, including restart and failover |
+| Crash/failover recovery qualification | Partial SQL/lost acknowledgement are covered locally; coordinator restart persistence is covered against etcd | Add durable interruption, lost-response, and failover scenarios |
 | Router propagation qualification | Current network tests have no routers/shards | Verify metadata visibility and failure behavior with registered routers and valid shard configuration |
-| Automated CI | No workflow is checked in | Required lint, unit, reference, integration, and packaging jobs |
-| Supported-version matrix | No automated Python/OS/SPQR matrix | Test declared Python support on Linux/macOS and pin supported SPQR builds |
+| CI enforcement | Workflow is implemented; repository branch protection is external configuration | Push, confirm all hosted checks, and require CI passed |
+| Supported-version matrix | Workflow covers Python 3.10–3.14 on Linux, minimum/latest on macOS, and one pinned SPQR build | Confirm hosted results and expand SPQR versions when supported |
 | Client hardening | Configuration types and server capabilities are only partially checked; journal size is unbounded | Validate types, detect supported capabilities, and define size limits before writes |
 | Durable callback recovery | A recorded version may have an unfinished callback | Define explicit recovery behavior; add interruption coverage and a tested runbook |
 | Release distribution | Local build/install verified; no release workflow or checked-in license file | Choose a license, define versioning, add release notes and a tag/build/publish workflow |
@@ -68,22 +70,25 @@ do not isolate distribution metadata.
 
 ## Prioritized implementation plan
 
-### 1. Make the current behavior reproducible in CI
+### 1. Enforce CI and extend durable integration coverage
 
 Owner: spqrmigrate.
 
-- [ ] Add a required workflow for `make lint`, local tests, and package building.
-- [ ] Fetch the exact pgmigrate reference, verify its pinned hash, and run the
+- [x] Add a workflow for `make lint`, local tests, and package building.
+- [x] Fetch the exact pgmigrate reference, verify its pinned hash, and run the
       reference suite in a dedicated job. A skipped suite must not count as a pass.
-- [ ] Add an isolated integration fixture using an unmodified, pinned SPQR build
+- [x] Add an isolated integration fixture using an unmodified, pinned SPQR build
       and durable etcd. Start/stop it automatically and capture failure logs.
-- [ ] Run the coordinator suite in CI; add journal replacement/reset, Unicode
-      values, malformed journal, interrupted SQL, and lost-response scenarios.
-- [ ] Verify history after coordinator restart; add router metadata propagation
-      coverage and ensure the shard configuration is valid.
-- [ ] Install the built wheel in a fresh environment and exercise its entry point.
-- [ ] Run on the minimum supported Python version and the other versions/OSes
-      intended for release support.
+- [x] Run the coordinator suite in CI, including journal replacement/reset,
+      Unicode values, malformed journal, and partial SQL failure/resume.
+- [x] Verify history and distribution metadata after coordinator restart, with
+      a valid empty shard configuration.
+- [x] Install the built wheel in a fresh environment and exercise both entry points.
+- [x] Add minimum-supported and current Python versions and Linux/macOS jobs.
+- [ ] Push the workflow, verify its first hosted matrix run, and configure
+      `CI passed` as a required check in repository settings.
+- [ ] Add durable interrupted-SQL and lost-response scenarios.
+- [ ] Add router metadata propagation and coordinator failover coverage.
 
 Done when a clean checkout can reproduce the checks without a developer's local
 coordinator, and required reference/integration jobs fail if their inputs are missing.
@@ -169,8 +174,9 @@ cannot split a committed metadata change from its history record.
 
 ## What to do next
 
-1. Start with the CI and durable integration fixture in step 1. It gives a
-   repeatable baseline before changing the server/client contract.
+1. Push the CI workflow, confirm its hosted checks, and require `CI passed` in
+   branch protection. Extend the durable fixture with interruption, lost-response,
+   router propagation, and failover scenarios from step 1.
 2. In SPQR, agree on the lock, fencing, and journal-revision guarantees in step 2;
    implement or identify the native API and then integrate it into spqrmigrate.
 3. Finish the recovery and release work in step 3 for a qualified nontransactional

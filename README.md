@@ -267,6 +267,25 @@ make test PYTEST_ARGS='-q tests/test_console.py'
 Local tests run by default. Reference and coordinator tests are opt-in and are
 skipped unless their environment variables are set.
 
+### Continuous integration
+
+[GitHub Actions](.github/workflows/ci.yml) runs on pushes, pull requests, and manual
+dispatches. It checks:
+
+- Ruff, wheel/sdist builds, and both CLI entry points installed from a wheel in a
+  fresh environment outside the checkout.
+- Local tests on Python 3.10–3.14 on Linux, plus Python 3.10 and 3.14 on macOS.
+- Compatibility against the hash-verified pgmigrate 1.0.13 reference.
+- Console integration against unmodified SPQR commit
+  `1ada44d557ba928df5c3cc6bdc70577361a8bb28` and etcd 3.6.0, including journal
+  replacement, Unicode, corrupt-history rejection, and persistence after a
+  coordinator restart.
+
+The test jobs use `--fail-on-skip` so missing opt-in inputs cannot produce a
+successful check. Package artifacts and integration logs are retained for 14
+days. Configure **CI passed** as a required branch-protection check; it succeeds
+only when every job succeeds. The workflow does not publish packages.
+
 ### Reference tests
 
 ```sh
@@ -288,6 +307,22 @@ distributions, relations, and history keys.
 SPQRMIGRATE_TEST_DSN='host=localhost port=7002 dbname=spqr-console user=admin' \
   make test PYTEST_ARGS='-q tests/test_live_console.py'
 ```
+
+To reproduce the full CI integration suite, supply coordinator and etcd binaries
+and an unused local Console port. The fixture starts both services with isolated
+temporary configuration and etcd data, then stops them after testing:
+
+```sh
+SPQRMIGRATE_TEST_DSN='host=127.0.0.1 port=57432 dbname=spqr-console user=admin connect_timeout=2' \
+SPQRMIGRATE_TEST_COORDINATOR=/path/to/spqr-coordinator \
+SPQRMIGRATE_TEST_ETCD=/path/to/etcd \
+  make test PYTEST_ARGS='-q --fail-on-skip tests/test_live_console.py'
+```
+
+The restart check requires managed services and is skipped when testing an
+existing coordinator. CI uploads coordinator/etcd logs and its JUnit report,
+including when integration tests fail. Router propagation and failover remain
+outside this suite.
 
 See [plan.md](plan.md) for release criteria, missing guarantees, and the next
 implementation steps.
