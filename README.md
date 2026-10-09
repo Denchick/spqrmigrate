@@ -104,6 +104,20 @@ and 130 for interruption.
 
 ## Verification
 
+The Makefile sets up development dependencies in `.venv` automatically:
+
+```sh
+make install
+make lint
+make test
+make build
+make clean
+```
+
+`make` lists the available targets. `clean` keeps the virtualenv. Override
+`PYTHON` or `VENV` to use another interpreter or environment, and `PYTEST_ARGS`
+to select tests, for example `make test PYTEST_ARGS='-q tests/test_console.py'`.
+
 ```sh
 .venv/bin/python -m pytest -q
 ```
